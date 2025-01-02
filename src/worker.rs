@@ -52,31 +52,47 @@ pub fn worker(prefixes: Vec<String>, counter: Arc<AtomicUsize>) {
         ripe_hasher.update(&sha_hash);
         let ripe_hash: [u8; 20] = ripe_hasher.finalize_reset().into();
         
-        // Construct address bytes with version prefix
-        let mut address_bytes = Vec::with_capacity(25); // 1 version + 20 hash + 4 checksum
-        address_bytes.push(0x00); // Version byte for mainnet
-        address_bytes.extend_from_slice(&ripe_hash);
+        // Create partial address bytes with version prefix
+        let mut partial_bytes = Vec::with_capacity(21); // 1 version + 20 hash
+        partial_bytes.push(0x00); // Version byte for mainnet
+        partial_bytes.extend_from_slice(&ripe_hash);
         
-        // Create double SHA256 checksum
-        checksum_hasher.update(&address_bytes);
-        let first_hash = checksum_hasher.finalize_reset();
+        // Convert partial bytes to Base58
+        let partial_address = partial_bytes.to_base58();
         
-        checksum_hasher.update(&first_hash);
-        let second_hash = checksum_hasher.finalize_reset();
-        
-        // Append first 4 bytes of checksum
-        address_bytes.extend_from_slice(&second_hash[0..4]);
-        
-        // Convert to Base58 address
-        let address_str = address_bytes.to_base58();
-        
-        // Check if address matches any prefix
+        // Check if any prefix matches the partial address
+        let mut matched_prefix = None;
         for prefix in &prefixes {
-            if address_str.starts_with(prefix) {
+            if partial_address.starts_with(prefix) {
+                matched_prefix = Some(prefix);
+                break;
+            }
+        }
+        
+        // Only generate full address if we found a matching prefix
+        if let Some(prefix) = matched_prefix {
+            // Create full address bytes with checksum
+            let mut full_bytes = partial_bytes.clone();
+            
+            // Create double SHA256 checksum
+            checksum_hasher.update(&partial_bytes);
+            let first_hash = checksum_hasher.finalize_reset();
+            
+            checksum_hasher.update(&first_hash);
+            let second_hash = checksum_hasher.finalize_reset();
+            
+            // Append first 4 bytes of checksum
+            full_bytes.extend_from_slice(&second_hash[0..4]);
+            
+            // Convert to full Base58 address
+            let full_address = full_bytes.to_base58();
+            
+            // Verify the full address still matches (should always be true)
+            if full_address.starts_with(prefix) {
                 println!(
                     "Private Key: {}, Address: {}",
                     hex::encode(private_key),
-                    address_str
+                    full_address
                 );
             }
         }
