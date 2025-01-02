@@ -63,7 +63,7 @@ pub fn worker(prefixes: Vec<String>, counter: Arc<AtomicUsize>) {
         // Check if any prefix matches the partial address
         let mut matched_prefix = None;
         for prefix in &prefixes {
-            if partial_address.starts_with(prefix) {
+            if partial_address.contains(prefix) {
                 matched_prefix = Some(prefix);
                 break;
             }
@@ -88,7 +88,7 @@ pub fn worker(prefixes: Vec<String>, counter: Arc<AtomicUsize>) {
             let full_address = full_bytes.to_base58();
             
             // Verify the full address still matches (should always be true)
-            if full_address.starts_with(prefix) {
+            if full_address.contains(prefix) {
                 println!(
                     "Private Key: {}, Address: {}",
                     hex::encode(private_key),
