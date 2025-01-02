@@ -1,11 +1,3 @@
-/// This whole file needs cleaning up. I made it all very quick just for it to work.
-///
-/// TO DO:
-///
-/// - Use global hashers if possible
-/// - In-house elliptic curve
-/// - Don't create multiple slices -- resize them.
-///
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -17,10 +9,20 @@ use ripemd::Ripemd160;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
 
+/// Worker that generates Bitcoin addresses and checks if they match given prefixes
+/// 
+/// # Arguments
+/// * `prefixes` - List of address prefixes to match against
+/// * `counter` - Shared atomic counter for tracking iterations
 pub fn worker(prefixes: Vec<String>, counter: Arc<AtomicUsize>) {
     let mut rng = rand::thread_rng();
     let mut i = 0;
     let secp = Secp256k1::new();
+    
+    // Create hashers once to reuse
+    let mut sha_hasher = Sha256::new();
+    let mut ripe_hasher = Ripemd160::new();
+    let mut checksum_hasher = Sha256::new();
     
     loop {
         i += 1;
@@ -30,45 +32,45 @@ pub fn worker(prefixes: Vec<String>, counter: Arc<AtomicUsize>) {
             i = 0;
         }
         
-        // create private key
+        // Generate private key
         let mut private_key: [u8; 32] = [0; 32];
         rng.fill(&mut private_key[..]);
         
-        // create corresponding public key
-        let secret_key = SecretKey::from_slice(&private_key).unwrap();
+        // Generate public key
+        let secret_key = match SecretKey::from_slice(&private_key) {
+            Ok(key) => key,
+            Err(_) => continue, // Skip invalid keys
+        };
         let public_key = PublicKey::from_secret_key(&secp, &secret_key);
         let raw_public_key = public_key.serialize_uncompressed();
         
-        // hash public key as SHA256
-        let mut sha_hasher = Sha256::new();
-        sha_hasher.update(&raw_public_key[..]);
-        let sha_hash = sha_hasher.finalize();
+        // Hash public key with SHA256
+        sha_hasher.update(&raw_public_key);
+        let sha_hash = sha_hasher.finalize_reset();
         
-        // hash public key's SHA256 hash as RIPEMD-160
-        let mut ripe_hasher = Ripemd160::new();
+        // Hash SHA256 result with RIPEMD-160
         ripe_hasher.update(&sha_hash);
-        let ripe_hash: [u8; 20] = ripe_hasher.finalize().into();
+        let ripe_hash: [u8; 20] = ripe_hasher.finalize_reset().into();
         
-        // construct version + hash
-        let mut address_bytes = vec![0x00]; // Version byte for mainnet
+        // Construct address bytes with version prefix
+        let mut address_bytes = Vec::with_capacity(25); // 1 version + 20 hash + 4 checksum
+        address_bytes.push(0x00); // Version byte for mainnet
         address_bytes.extend_from_slice(&ripe_hash);
         
-        // create double SHA256 checksum
-        let mut checksum_hasher = Sha256::new();
+        // Create double SHA256 checksum
         checksum_hasher.update(&address_bytes);
-        let first_hash = checksum_hasher.finalize();
+        let first_hash = checksum_hasher.finalize_reset();
         
-        let mut checksum_hasher = Sha256::new();
         checksum_hasher.update(&first_hash);
-        let second_hash = checksum_hasher.finalize();
+        let second_hash = checksum_hasher.finalize_reset();
         
-        // append first 4 bytes of checksum
+        // Append first 4 bytes of checksum
         address_bytes.extend_from_slice(&second_hash[0..4]);
         
-        // convert to base58
+        // Convert to Base58 address
         let address_str = address_bytes.to_base58();
         
-        // check if address matches any prefix
+        // Check if address matches any prefix
         for prefix in &prefixes {
             if address_str.starts_with(prefix) {
                 println!(
