@@ -15,6 +15,8 @@ use sha2::{Digest, Sha256};
 /// * `prefixes` - List of address prefixes to match against
 /// * `counter` - Shared atomic counter for tracking iterations
 pub fn worker(prefixes: Vec<String>, counter: Arc<AtomicUsize>) {
+    let prefixes: Vec<String> = prefixes.into_iter().map(|prefix| prefix.to_lowercase()).collect();
+
     let mut rng = rand::thread_rng();
     let mut i = 0;
     let secp = Secp256k1::new();
@@ -63,8 +65,7 @@ pub fn worker(prefixes: Vec<String>, counter: Arc<AtomicUsize>) {
         // Check if any prefix matches the partial address
         let mut matched_prefix = None;
         for prefix in &prefixes {
-            if partial_address.contains(prefix) {
-                matched_prefix = Some(prefix);
+            if partial_address.to_lowercase().contains(prefix) { matched_prefix = Some(prefix);
                 break;
             }
         }
@@ -88,7 +89,7 @@ pub fn worker(prefixes: Vec<String>, counter: Arc<AtomicUsize>) {
             let full_address = full_bytes.to_base58();
             
             // Verify the full address still matches (should always be true)
-            if full_address.contains(prefix) {
+            if full_address.to_lowercase().contains(prefix) {
                 println!(
                     "Private Key: {}, Address: {}",
                     hex::encode(private_key),
